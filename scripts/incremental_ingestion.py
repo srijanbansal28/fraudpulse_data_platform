@@ -24,8 +24,9 @@ def save_checkpoint(processed_files):
         json.dump(sorted(processed_files), file, indent=2)
 
 
+
 def ingest_new_batches():
-    """Append new batches to Bronze and skip previously processed files."""
+    """Validate new batches before appending them to Bronze."""
     BATCH_DIR.mkdir(parents=True, exist_ok=True)
     BRONZE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -37,22 +38,55 @@ def ingest_new_batches():
         print("No new batches to ingest.")
         return 0
 
+    # Read and validate every new batch before writing anything.
+    validated_batches = {}
+
+    for batch_file in new_files:
+        records = []
+
+        with batch_file.open("r", encoding="utf-8") as source:
+            for line_number, line in enumerate(source, start=1):
+                if not line.strip():
+                    continue
+
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid JSON in {batch_file.name}, "
+                        f"line {line_number}: {exc}"
+                    ) from exc
+
+                if not isinstance(record, dict):
+                    raise ValueError(
+                        f"Expected a JSON object in {batch_file.name}, "
+                        f"line {line_number}"
+                    )
+
+                records.append(record)
+
+        validated_batches[batch_file.name] = records
+
+    # Append only after every new batch has passed validation.
     bronze_file = BRONZE_DIR / "transactions.jsonl"
     total_ingested = 0
 
-    # Append records before recording the checkpoint.
     with bronze_file.open("a", encoding="utf-8") as output:
         for batch_file in new_files:
-            with batch_file.open("r", encoding="utf-8") as source:
-                for line in source:
-                    record = json.loads(line)
-                    output.write(json.dumps(record) + "\n")
-                    total_ingested += 1
+            records = validated_batches[batch_file.name]
+
+            for record in records:
+                output.write(json.dumps(record) + "\n")
+                total_ingested += 1
 
             processed_files.add(batch_file.name)
 
     save_checkpoint(processed_files)
-    print(f"Ingested {total_ingested} transactions from {len(new_files)} new batch(es).")
+
+    print(
+        f"Ingested {total_ingested} transactions "
+        f"from {len(new_files)} new batch(es)."
+    )
     return total_ingested
 
 

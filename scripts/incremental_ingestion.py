@@ -20,9 +20,9 @@ def load_checkpoint():
 def save_checkpoint(processed_files):
     """Persist processed batch filenames."""
     CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
+
     with CHECKPOINT_FILE.open("w", encoding="utf-8") as file:
         json.dump(sorted(processed_files), file, indent=2)
-
 
 
 def ingest_new_batches():
@@ -32,7 +32,10 @@ def ingest_new_batches():
 
     processed_files = load_checkpoint()
     new_files = sorted(BATCH_DIR.glob("transactions_*.jsonl"))
-    new_files = [path for path in new_files if path.name not in processed_files]
+    new_files = [
+        path for path in new_files
+        if path.name not in processed_files
+    ]
 
     if not new_files:
         print("No new batches to ingest.")
@@ -63,11 +66,51 @@ def ingest_new_batches():
                         f"line {line_number}"
                     )
 
+                event_id = record.get("event_id")
+                transaction_id = record.get("transaction_id")
+                amount = record.get("amount")
+
+                if (
+                    not isinstance(event_id, str)
+                    or not event_id.strip()
+                ):
+                    raise ValueError(
+                        f"Missing or invalid event_id in "
+                        f"{batch_file.name}, line {line_number}"
+                    )
+
+                if (
+                    not isinstance(transaction_id, str)
+                    or not transaction_id.strip()
+                ):
+                    raise ValueError(
+                        f"Missing or invalid transaction_id in "
+                        f"{batch_file.name}, line {line_number}"
+                    )
+
+                if (
+                    isinstance(amount, bool)
+                    or not isinstance(amount, (int, float))
+                ):
+                    raise ValueError(
+                        f"Invalid amount in {batch_file.name}, "
+                        f"line {line_number}"
+                    )
+
+                if amount <= 0:
+                    raise ValueError(
+                        f"Amount must be positive in "
+                        f"{batch_file.name}, line {line_number}"
+                    )
+
                 records.append(record)
+
+        if not records:
+            raise ValueError(f"Batch {batch_file.name} is empty")
 
         validated_batches[batch_file.name] = records
 
-    # Append only after every new batch has passed validation.
+    # Append only after every new batch passes validation.
     bronze_file = BRONZE_DIR / "transactions.jsonl"
     total_ingested = 0
 

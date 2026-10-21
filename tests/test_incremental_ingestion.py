@@ -180,6 +180,7 @@ def test_empty_batch_is_rejected(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="empty"):
         ingestion.ingest_new_batches()
 
+
 def test_recovers_when_bronze_has_batch_but_checkpoint_is_missing(
     tmp_path, monkeypatch
 ):
@@ -200,22 +201,19 @@ def test_recovers_when_bronze_has_batch_but_checkpoint_is_missing(
         "amount": 250,
     }
 
-    write_batch(
-        batch_dir,
-        "transactions_recovery.jsonl",
-        [record],
-    )
+    batch_name = "transactions_recovery.jsonl"
+    write_batch(batch_dir, batch_name, [record])
 
-    bronze_file = bronze_dir / "transactions.jsonl"
+    bronze_file = bronze_dir / batch_name
 
-    # Simulate a previous run that wrote the record but
-    # stopped before saving the checkpoint.
+    # Simulate a previous run that wrote the batch output
+    # but stopped before saving its checkpoint.
     bronze_file.write_text(
         json.dumps(record) + "\n",
         encoding="utf-8",
     )
 
-    # The retry should not append a duplicate.
+    # Retry ingestion.
     ingestion.ingest_new_batches()
 
     bronze_records = [
@@ -223,5 +221,12 @@ def test_recovers_when_bronze_has_batch_but_checkpoint_is_missing(
         for line in bronze_file.read_text(encoding="utf-8").splitlines()
     ]
 
-    event_ids = [item["event_id"] for item in bronze_records]
-    assert event_ids.count("event-recovery-1") == 1
+    # The output should be replaced, not appended.
+    assert len(bronze_records) == 1
+    assert bronze_records[0]["event_id"] == "event-recovery-1"
+
+    # The checkpoint should now record the processed batch.
+    assert checkpoint_file.exists()
+    assert batch_name in json.loads(
+        checkpoint_file.read_text(encoding="utf-8")
+    )

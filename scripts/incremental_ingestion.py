@@ -26,7 +26,7 @@ def save_checkpoint(processed_files):
 
 
 def ingest_new_batches():
-    """Validate new batches before appending them to Bronze."""
+    """Validate and ingest batches into separate Bronze files."""
     BATCH_DIR.mkdir(parents=True, exist_ok=True)
     BRONZE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -41,7 +41,7 @@ def ingest_new_batches():
         print("No new batches to ingest.")
         return 0
 
-    # Read and validate every new batch before writing anything.
+    # Validate every pending batch before writing any output.
     validated_batches = {}
 
     for batch_file in new_files:
@@ -70,10 +70,7 @@ def ingest_new_batches():
                 transaction_id = record.get("transaction_id")
                 amount = record.get("amount")
 
-                if (
-                    not isinstance(event_id, str)
-                    or not event_id.strip()
-                ):
+                if not isinstance(event_id, str) or not event_id.strip():
                     raise ValueError(
                         f"Missing or invalid event_id in "
                         f"{batch_file.name}, line {line_number}"
@@ -110,21 +107,27 @@ def ingest_new_batches():
 
         validated_batches[batch_file.name] = records
 
-    # Append only after every new batch passes validation.
-    bronze_file = BRONZE_DIR / "transactions.jsonl"
+    # Write each batch to its own output file.
     total_ingested = 0
 
-    with bronze_file.open("a", encoding="utf-8") as output:
-        for batch_file in new_files:
-            records = validated_batches[batch_file.name]
+    for batch_file in new_files:
+        records = validated_batches[batch_file.name]
+        output_file = BRONZE_DIR / batch_file.name
+        temp_file = output_file.with_suffix(".tmp")
 
+        # Write a complete temporary file before replacing the output.
+        with temp_file.open("w", encoding="utf-8") as output:
             for record in records:
                 output.write(json.dumps(record) + "\n")
-                total_ingested += 1
 
-            processed_files.add(batch_file.name)
+        # Atomic replacement on the same filesystem.
+        temp_file.replace(output_file)
 
-    save_checkpoint(processed_files)
+        # Record the batch only after its output file is in place.
+        processed_files.add(batch_file.name)
+        save_checkpoint(processed_files)
+
+        total_ingested += len(records)
 
     print(
         f"Ingested {total_ingested} transactions "

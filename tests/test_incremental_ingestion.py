@@ -16,6 +16,7 @@ def write_batch(batch_dir, filename, records):
     return batch_file
 
 
+
 def test_ingests_new_batch_once(tmp_path, monkeypatch):
     batch_dir = tmp_path / "batches"
     bronze_dir = tmp_path / "bronze"
@@ -46,14 +47,15 @@ def test_ingests_new_batch_once(tmp_path, monkeypatch):
 
     assert ingestion.ingest_new_batches() == 2
 
-    bronze_file = bronze_dir / "transactions.jsonl"
+    # Each batch now has its own Bronze output file.
+    bronze_file = bronze_dir / "transactions_test.jsonl"
     assert len(bronze_file.read_text(encoding="utf-8").splitlines()) == 2
 
-    # Rerunning must not append the same batch again.
+    # Rerunning must not duplicate the same batch.
     assert ingestion.ingest_new_batches() == 0
     assert len(bronze_file.read_text(encoding="utf-8").splitlines()) == 2
 
-    # A new batch should be ingested on the next run.
+    # A new batch should be ingested into its own file.
     write_batch(
         batch_dir,
         "transactions_test_2.jsonl",
@@ -67,7 +69,12 @@ def test_ingests_new_batch_once(tmp_path, monkeypatch):
     )
 
     assert ingestion.ingest_new_batches() == 1
-    assert len(bronze_file.read_text(encoding="utf-8").splitlines()) == 3
+
+    second_bronze_file = bronze_dir / "transactions_test_2.jsonl"
+    assert len(second_bronze_file.read_text(encoding="utf-8").splitlines()) == 1
+
+    # The original batch remains unchanged.
+    assert len(bronze_file.read_text(encoding="utf-8").splitlines()) == 2
 
 
 def test_malformed_batch_is_rejected_before_bronze_write(
@@ -172,3 +179,49 @@ def test_empty_batch_is_rejected(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match="empty"):
         ingestion.ingest_new_batches()
+
+def test_recovers_when_bronze_has_batch_but_checkpoint_is_missing(
+    tmp_path, monkeypatch
+):
+    batch_dir = tmp_path / "batches"
+    bronze_dir = tmp_path / "bronze"
+    checkpoint_file = tmp_path / "processed_batches.json"
+
+    batch_dir.mkdir()
+    bronze_dir.mkdir()
+
+    monkeypatch.setattr(ingestion, "BATCH_DIR", batch_dir)
+    monkeypatch.setattr(ingestion, "BRONZE_DIR", bronze_dir)
+    monkeypatch.setattr(ingestion, "CHECKPOINT_FILE", checkpoint_file)
+
+    record = {
+        "event_id": "event-recovery-1",
+        "transaction_id": "txn-recovery-1",
+        "amount": 250,
+    }
+
+    write_batch(
+        batch_dir,
+        "transactions_recovery.jsonl",
+        [record],
+    )
+
+    bronze_file = bronze_dir / "transactions.jsonl"
+
+    # Simulate a previous run that wrote the record but
+    # stopped before saving the checkpoint.
+    bronze_file.write_text(
+        json.dumps(record) + "\n",
+        encoding="utf-8",
+    )
+
+    # The retry should not append a duplicate.
+    ingestion.ingest_new_batches()
+
+    bronze_records = [
+        json.loads(line)
+        for line in bronze_file.read_text(encoding="utf-8").splitlines()
+    ]
+
+    event_ids = [item["event_id"] for item in bronze_records]
+    assert event_ids.count("event-recovery-1") == 1

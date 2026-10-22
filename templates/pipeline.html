@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}FraudPulse — Pipeline{% endblock %}
+{% block content %}
+<h4 class="page-header mb-4"><i class="bi bi-gear me-2"></i>Pipeline Control Center</h4>
+
+<!-- Pipeline Status -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="stat-value" style="font-size:1.5rem">{{ gen_count }}</div>
+            <div class="stat-label">Generated Events</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="stat-value" style="font-size:1.5rem">{{ batch_files|length }}</div>
+            <div class="stat-label">Batch Files</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="stat-value" style="font-size:1.5rem">{{ bronze_files|length }}</div>
+            <div class="stat-label">Bronze Files</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card text-center">
+            <div class="stat-value" style="font-size:1.5rem">{{ checkpoint|length }}</div>
+            <div class="stat-label">Checkpointed</div>
+        </div>
+    </div>
+</div>
+
+<!-- Pipeline Steps -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="pipeline-step">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0"><i class="bi bi-lightning me-2 text-warning"></i>Step 1: Generate Events</h6>
+                <button class="btn btn-accent btn-sm" onclick="runAction('generate_events', this)">
+                    <i class="bi bi-play-fill me-1"></i>Run
+                </button>
+            </div>
+            <p class="text-muted-custom small mb-2">Generate 1,020 synthetic transactions (1,000 + 20 replays) into <code>data/generated/transactions.jsonl</code></p>
+            <div class="output-box" id="output-generate_events">Ready to run...</div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="pipeline-step">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0"><i class="bi bi-collection me-2 text-info"></i>Step 2: Generate Batch</h6>
+                <button class="btn btn-accent btn-sm" onclick="runAction('generate_batch', this)">
+                    <i class="bi bi-play-fill me-1"></i>Run
+                </button>
+            </div>
+            <p class="text-muted-custom small mb-2">Create a timestamped 100-record batch in <code>data/batches/</code></p>
+            <div class="output-box" id="output-generate_batch">Ready to run...</div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="pipeline-step">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0"><i class="bi bi-database-add me-2 text-success"></i>Step 3: Incremental Ingestion</h6>
+                <button class="btn btn-accent btn-sm" onclick="runAction('ingest', this)">
+                    <i class="bi bi-play-fill me-1"></i>Run
+                </button>
+            </div>
+            <p class="text-muted-custom small mb-2">Validate & ingest new batches into <code>data/bronze/</code> with checkpointing</p>
+            <div class="output-box" id="output-ingest">Ready to run...</div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="pipeline-step">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0"><i class="bi bi-check2-square me-2 text-primary"></i>Step 4: Run Tests</h6>
+                <button class="btn btn-accent btn-sm" onclick="runAction('run_tests', this)">
+                    <i class="bi bi-play-fill me-1"></i>Run
+                </button>
+            </div>
+            <p class="text-muted-custom small mb-2">Execute full pytest suite (12 tests)</p>
+            <div class="output-box" id="output-run_tests">Ready to run...</div>
+        </div>
+    </div>
+</div>
+
+<!-- File Lists -->
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="chart-card">
+            <h5><i class="bi bi-folder me-2"></i>Batch Files</h5>
+            {% if batch_files %}
+            <ul class="list-unstyled mb-0 mt-3">
+                {% for f in batch_files %}
+                <li class="mb-1"><code class="small">📄 {{ f }}</code></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-muted-custom small mt-3 mb-0">No batch files yet. Run Step 2.</p>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="chart-card">
+            <h5><i class="bi bi-folder-check me-2"></i>Bronze Files</h5>
+            {% if bronze_files %}
+            <ul class="list-unstyled mb-0 mt-3">
+                {% for f in bronze_files %}
+                <li class="mb-1"><code class="small">✅ {{ f }}</code></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-muted-custom small mt-3 mb-0">No bronze files yet. Run Step 3.</p>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="chart-card">
+            <h5><i class="bi bi-bookmark-check me-2"></i>Checkpoint</h5>
+            {% if checkpoint %}
+            <ul class="list-unstyled mb-0 mt-3">
+                {% for f in checkpoint %}
+                <li class="mb-1"><code class="small">🔖 {{ f }}</code></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-muted-custom small mt-3 mb-0">No checkpoints yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runAction(action, btn) {
+    const box = document.getElementById('output-' + action);
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running...';
+    box.textContent = '⏳ Running...\n';
+
+    try {
+        const resp = await fetch('/api/run/' + action, { method: 'POST' });
+        const data = await resp.json();
+        box.textContent = data.output || '(no output)';
+        if (data.ok) {
+            box.style.color = '#a3e635';
+            btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Done';
+            btn.className = 'btn btn-success btn-sm';
+        } else {
+            box.style.color = '#f87171';
+            btn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Failed';
+            btn.className = 'btn btn-danger btn-sm';
+        }
+    } catch(e) {
+        box.textContent = 'Error: ' + e.message;
+        box.style.color = '#f87171';
+        btn.innerHTML = '<i class="bi bi-x-lg me-1"></i>Error';
+        btn.className = 'btn btn-danger btn-sm';
+    }
+
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Run';
+        btn.className = 'btn btn-accent btn-sm';
+    }, 3000);
+}
+</script>
+{% endblock %}

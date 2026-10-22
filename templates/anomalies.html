@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}FraudPulse — Anomalies{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="page-header mb-0"><i class="bi bi-exclamation-triangle me-2 text-warning"></i>Anomaly Detection Results</h4>
+    <span class="text-muted-custom">{{ total }} flagged transactions</span>
+</div>
+
+<!-- Risk Summary Cards -->
+<div class="row g-3 mb-4">
+    {% for level, color in [('CRITICAL','danger'),('HIGH','warning'),('MEDIUM','info'),('LOW','success')] %}
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card text-center">
+            <div class="stat-value text-{{ color }}" style="font-size:2rem">{{ risk_dist.get(level, 0) }}</div>
+            <div class="stat-label">{{ level }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Chart -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="chart-card">
+            <h5>Risk Score Distribution</h5>
+            <canvas id="riskBar" height="200"></canvas>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="chart-card">
+            <h5>Anomaly Flag Breakdown</h5>
+            <canvas id="flagChart" height="200"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Table -->
+<div class="chart-card">
+    <h5 class="mb-3">Flagged Transactions</h5>
+    <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0" style="font-size:.82rem">
+            <thead>
+                <tr>
+                    <th>Txn ID</th><th>Customer</th><th>Merchant</th><th>Amount</th>
+                    <th>Score</th><th>Level</th>
+                    <th title="High Amount">💰</th><th title="Velocity">⚡</th><th title="Cross-Border">🌍</th><th title="Off-Hours">🌙</th><th title="Merchant Risk">🏪</th>
+                    <th>Z-Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in records %}
+                <tr>
+                    <td><code>{{ r.transaction_id }}</code></td>
+                    <td>{{ r.customer_id }}</td>
+                    <td>{{ r.merchant_id }}</td>
+                    <td>₹{{ "{:,.2f}".format(r.amount) }}</td>
+                    <td><strong>{{ r.risk_score }}</strong></td>
+                    <td><span class="badge badge-{{ r.risk_level|lower }}">{{ r.risk_level }}</span></td>
+                    <td>{{ '✅' if r.flag_high_amount else '—' }}</td>
+                    <td>{{ '✅' if r.flag_velocity else '—' }}</td>
+                    <td>{{ '✅' if r.flag_cross_border else '—' }}</td>
+                    <td>{{ '✅' if r.flag_off_hours else '—' }}</td>
+                    <td>{{ '✅' if r.flag_merchant_risk else '—' }}</td>
+                    <td>{{ "{:.2f}".format(r.amount_zscore) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if total_pages > 1 %}
+    <nav class="mt-3">
+        <ul class="pagination pagination-sm justify-content-center mb-0">
+            <li class="page-item {{ 'disabled' if page <= 1 }}"><a class="page-link" href="?page={{ page-1 }}">&laquo;</a></li>
+            {% for p in range(1, total_pages+1) %}
+            <li class="page-item {{ 'active' if p == page }}"><a class="page-link" href="?page={{ p }}">{{ p }}</a></li>
+            {% endfor %}
+            <li class="page-item {{ 'disabled' if page >= total_pages }}"><a class="page-link" href="?page={{ page+1 }}">&raquo;</a></li>
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dist = {{ risk_dist | tojson }};
+new Chart(document.getElementById('riskBar'), {
+    type: 'bar',
+    data: {
+        labels: ['Critical','High','Medium','Low'],
+        datasets: [{
+            data: [dist.CRITICAL||0, dist.HIGH||0, dist.MEDIUM||0, dist.LOW||0],
+            backgroundColor: ['#dc2626','#ea580c','#ca8a04','#16a34a'],
+            borderRadius: 6,
+        }]
+    },
+    options: { responsive:true, plugins:{legend:{display:false}}, scales:{y:{ticks:{color:'#94a3b8'},grid:{color:'#334155'}},x:{ticks:{color:'#94a3b8'},grid:{display:false}}} }
+});
+
+// Count flags from visible records
+const records = {{ records | tojson }};
+const flags = {amount:0,velocity:0,cross:0,hours:0,merchant:0};
+records.forEach(r => {
+    if(r.flag_high_amount) flags.amount++;
+    if(r.flag_velocity) flags.velocity++;
+    if(r.flag_cross_border) flags.cross++;
+    if(r.flag_off_hours) flags.hours++;
+    if(r.flag_merchant_risk) flags.merchant++;
+});
+new Chart(document.getElementById('flagChart'), {
+    type: 'bar',
+    data: {
+        labels: ['💰 High Amt','⚡ Velocity','🌍 Cross-Border','🌙 Off-Hours','🏪 Merchant'],
+        datasets: [{
+            data: [flags.amount, flags.velocity, flags.cross, flags.hours, flags.merchant],
+            backgroundColor: ['#f59e0b','#8b5cf6','#06b6d4','#6366f1','#ec4899'],
+            borderRadius: 6,
+        }]
+    },
+    options: { indexAxis:'y', responsive:true, plugins:{legend:{display:false}}, scales:{x:{ticks:{color:'#94a3b8'},grid:{color:'#334155'}},y:{ticks:{color:'#94a3b8'},grid:{display:false}}} }
+});
+</script>
+{% endblock %}

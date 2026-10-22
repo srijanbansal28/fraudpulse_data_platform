@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}FraudPulse — Customer Risk{% endblock %}
+{% block content %}
+<h4 class="page-header mb-4"><i class="bi bi-people me-2"></i>Customer Risk Profiles</h4>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-8">
+        <div class="chart-card">
+            <h5>Top 15 Customers by Risk Score</h5>
+            <canvas id="custChart" height="180"></canvas>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="chart-card">
+            <h5>Spending vs Risk</h5>
+            <canvas id="scatterChart" height="180"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="chart-card">
+    <h5 class="mb-3">Customer Profiles (ranked by risk)</h5>
+    <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0" style="font-size:.85rem">
+            <thead>
+                <tr>
+                    <th>#</th><th>Customer ID</th><th>Transactions</th><th>Total Spent</th>
+                    <th>Avg Risk</th><th>Max Risk</th><th>High Risk Txns</th><th>Merchants</th>
+                    <th>Risk Tier</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in customers %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><strong>{{ c.customer_id }}</strong></td>
+                    <td>{{ c.count }}</td>
+                    <td>₹{{ "{:,.0f}".format(c.total_spent) }}</td>
+                    <td><span class="fw-bold {% if c.avg_risk >= 25 %}text-danger{% elif c.avg_risk >= 10 %}text-warning{% else %}text-success{% endif %}">{{ c.avg_risk }}</span></td>
+                    <td>{{ c.max_risk }}</td>
+                    <td>{{ c.high_risk_count }}</td>
+                    <td>{{ c.unique_merchants }}</td>
+                    <td>
+                        {% if c.avg_risk >= 50 %}<span class="badge badge-critical">CRITICAL</span>
+                        {% elif c.avg_risk >= 25 %}<span class="badge badge-high">HIGH</span>
+                        {% elif c.avg_risk >= 10 %}<span class="badge badge-medium">MEDIUM</span>
+                        {% else %}<span class="badge badge-low">LOW</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const customers = {{ customers | tojson }};
+const top15 = customers.slice(0, 15);
+new Chart(document.getElementById('custChart'), {
+    type: 'bar',
+    data: {
+        labels: top15.map(c => c.customer_id),
+        datasets: [{
+            label: 'Avg Risk Score',
+            data: top15.map(c => c.avg_risk),
+            backgroundColor: top15.map(c => c.avg_risk >= 25 ? '#ef4444' : c.avg_risk >= 10 ? '#eab308' : '#22c55e'),
+            borderRadius: 6,
+        }]
+    },
+    options: { responsive:true, plugins:{legend:{display:false}}, scales:{y:{ticks:{color:'#94a3b8'},grid:{color:'#334155'}},x:{ticks:{color:'#94a3b8',maxRotation:45,font:{size:10}},grid:{display:false}}} }
+});
+
+new Chart(document.getElementById('scatterChart'), {
+    type: 'scatter',
+    data: {
+        datasets: [{
+            label: 'Customers',
+            data: customers.slice(0,50).map(c => ({x: c.total_spent, y: c.avg_risk})),
+            backgroundColor: customers.slice(0,50).map(c => c.avg_risk >= 25 ? '#ef4444' : c.avg_risk >= 10 ? '#eab308' : '#22c55e88'),
+            pointRadius: 5,
+        }]
+    },
+    options: {
+        responsive:true,
+        plugins:{legend:{display:false}},
+        scales:{
+            x:{title:{display:true,text:'Total Spent (₹)',color:'#94a3b8'},ticks:{color:'#94a3b8'},grid:{color:'#334155'}},
+            y:{title:{display:true,text:'Avg Risk Score',color:'#94a3b8'},ticks:{color:'#94a3b8'},grid:{color:'#334155'}}
+        }
+    }
+});
+</script>
+{% endblock %}

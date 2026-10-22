@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}FraudPulse — Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="page-header mb-0"><i class="bi bi-speedometer2 me-2"></i>Fraud Detection Dashboard</h4>
+    <span class="text-muted-custom"><i class="bi bi-clock me-1"></i>{{ total_raw }} raw events loaded</span>
+</div>
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card d-flex justify-content-between align-items-center">
+            <div>
+                <div class="stat-value">{{ "{:,}".format(agg.total_transactions) }}</div>
+                <div class="stat-label">Total Transactions</div>
+            </div>
+            <i class="bi bi-receipt stat-icon text-primary"></i>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card d-flex justify-content-between align-items-center">
+            <div>
+                <div class="stat-value">₹{{ "{:,.0f}".format(agg.total_amount) }}</div>
+                <div class="stat-label">Total Volume</div>
+            </div>
+            <i class="bi bi-currency-rupee stat-icon text-success"></i>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card d-flex justify-content-between align-items-center">
+            <div>
+                <div class="stat-value">{{ agg.success_rate }}%</div>
+                <div class="stat-label">Success Rate</div>
+            </div>
+            <i class="bi bi-check-circle stat-icon text-success"></i>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card d-flex justify-content-between align-items-center">
+            <div>
+                {% set high_risk = agg.risk_distribution.get('CRITICAL', 0) + agg.risk_distribution.get('HIGH', 0) %}
+                <div class="stat-value text-danger">{{ high_risk }}</div>
+                <div class="stat-label">High Risk Alerts</div>
+            </div>
+            <i class="bi bi-exclamation-triangle stat-icon text-danger"></i>
+        </div>
+    </div>
+</div>
+
+<!-- Second Row KPIs -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card">
+            <div class="stat-label mb-1">Unique Customers</div>
+            <div class="stat-value" style="font-size:1.5rem">{{ agg.unique_customers }}</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card">
+            <div class="stat-label mb-1">Unique Merchants</div>
+            <div class="stat-value" style="font-size:1.5rem">{{ agg.unique_merchants }}</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card">
+            <div class="stat-label mb-1">Avg Transaction</div>
+            <div class="stat-value" style="font-size:1.5rem">₹{{ "{:,.0f}".format(agg.avg_amount) }}</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+        <div class="stat-card">
+            <div class="stat-label mb-1">Failed Transactions</div>
+            <div class="stat-value text-warning" style="font-size:1.5rem">{{ agg.failed_count }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-4">
+        <div class="chart-card h-100">
+            <h5><i class="bi bi-pie-chart me-2"></i>Risk Distribution</h5>
+            <canvas id="riskChart" height="260"></canvas>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="chart-card h-100">
+            <h5><i class="bi bi-credit-card me-2"></i>Payment Methods</h5>
+            <canvas id="paymentChart" height="260"></canvas>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="chart-card h-100">
+            <h5><i class="bi bi-bar-chart me-2"></i>Transaction Status</h5>
+            <canvas id="statusChart" height="260"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Hourly Chart -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="chart-card">
+            <h5><i class="bi bi-clock-history me-2"></i>Hourly Transaction Volume</h5>
+            <canvas id="hourlyChart" height="100"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Top Alerts Table -->
+<div class="row g-3">
+    <div class="col-12">
+        <div class="chart-card">
+            <h5><i class="bi bi-exclamation-octagon me-2 text-danger"></i>Top Risk Alerts</h5>
+            <div class="table-responsive">
+                <table class="table table-dark table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Transaction ID</th>
+                            <th>Customer</th>
+                            <th>Merchant</th>
+                            <th>Amount</th>
+                            <th>Method</th>
+                            <th>Risk Score</th>
+                            <th>Level</th>
+                            <th>Flags</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in alerts %}
+                        <tr class="alert-row">
+                            <td><code>{{ r.transaction_id }}</code></td>
+                            <td>{{ r.customer_id }}</td>
+                            <td>{{ r.merchant_id }}</td>
+                            <td>₹{{ "{:,.2f}".format(r.amount) }}</td>
+                            <td>{{ r.payment_method }}</td>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="fw-bold">{{ r.risk_score }}</span>
+                                    <div class="risk-bar flex-grow-1" style="width:60px">
+                                        <div class="risk-bar-fill bg-danger" style="width:{{ r.risk_score }}%"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><span class="badge badge-{{ r.risk_level|lower }}">{{ r.risk_level }}</span></td>
+                            <td>
+                                {% if r.flag_high_amount %}<span class="badge bg-secondary me-1" title="High Amount Z-Score">💰</span>{% endif %}
+                                {% if r.flag_velocity %}<span class="badge bg-secondary me-1" title="Velocity">⚡</span>{% endif %}
+                                {% if r.flag_cross_border %}<span class="badge bg-secondary me-1" title="Cross-Border">🌍</span>{% endif %}
+                                {% if r.flag_off_hours %}<span class="badge bg-secondary me-1" title="Off-Hours">🌙</span>{% endif %}
+                                {% if r.flag_merchant_risk %}<span class="badge bg-secondary me-1" title="Merchant Risk">🏪</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Risk Distribution Doughnut
+const riskData = {{ agg.risk_distribution | tojson }};
+new Chart(document.getElementById('riskChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Critical', 'High', 'Medium', 'Low'],
+        datasets: [{
+            data: [riskData.CRITICAL||0, riskData.HIGH||0, riskData.MEDIUM||0, riskData.LOW||0],
+            backgroundColor: ['#dc2626', '#ea580c', '#ca8a04', '#16a34a'],
+            borderWidth: 0,
+        }]
+    },
+    options: {
+        responsive: true,
+        cutout: '65%',
+        plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 15 } } }
+    }
+});
+
+// Payment Method Chart
+const pmData = {{ agg.payment_methods | tojson }};
+const pmLabels = Object.keys(pmData);
+const pmCounts = pmLabels.map(k => pmData[k].count);
+new Chart(document.getElementById('paymentChart'), {
+    type: 'doughnut',
+    data: {
+        labels: pmLabels,
+        datasets: [{
+            data: pmCounts,
+            backgroundColor: ['#6366f1', '#3b82f6', '#06b6d4'],
+            borderWidth: 0,
+        }]
+    },
+    options: {
+        responsive: true,
+        cutout: '65%',
+        plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 15 } } }
+    }
+});
+
+// Status Bar Chart
+new Chart(document.getElementById('statusChart'), {
+    type: 'bar',
+    data: {
+        labels: ['Success', 'Failed', 'Pending'],
+        datasets: [{
+            data: [{{ agg.success_count }}, {{ agg.failed_count }}, {{ agg.pending_count }}],
+            backgroundColor: ['#22c55e', '#ef4444', '#eab308'],
+            borderRadius: 6,
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }, x: { ticks: { color: '#94a3b8' }, grid: { display: false } } }
+    }
+});
+
+// Hourly Line Chart
+const hourlyData = {{ agg.hourly_pattern | tojson }};
+const hours = Object.keys(hourlyData).sort((a,b) => a-b);
+new Chart(document.getElementById('hourlyChart'), {
+    type: 'line',
+    data: {
+        labels: hours.map(h => h + ':00'),
+        datasets: [
+            {
+                label: 'Transactions',
+                data: hours.map(h => hourlyData[h].count),
+                borderColor: '#6366f1',
+                backgroundColor: 'rgba(99,102,241,.1)',
+                fill: true,
+                tension: .4,
+            },
+            {
+                label: 'Failed',
+                data: hours.map(h => hourlyData[h].failed),
+                borderColor: '#ef4444',
+                backgroundColor: 'rgba(239,68,68,.1)',
+                fill: true,
+                tension: .4,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#94a3b8' } } },
+        scales: { y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }, x: { ticks: { color: '#94a3b8' }, grid: { display: false } } }
+    }
+});
+</script>
+{% endblock %}
